@@ -1,1 +1,184 @@
-# yuvraj
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Habit Tracker</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0b0b;color:#f5f5f5;font-family:Arial,Helvetica,sans-serif}
+  .wrap{max-width:1200px;margin:auto;padding:18px}
+  h1{font-size:28px;margin:0 0 14px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  button,select,input{background:#151515;color:#fff;border:1px solid #444;border-radius:6px;padding:9px 11px}
+  button{cursor:pointer}
+  button:hover{background:#222}
+  .card{background:#101010;border:1px solid #444;border-radius:8px;overflow:auto}
+  table{border-collapse:collapse;width:max-content;min-width:100%}
+  th,td{border:1px solid #444;text-align:center;height:34px;padding:4px}
+  th{background:#171717;font-size:12px}
+  .habit{position:sticky;left:0;background:#111;z-index:2;text-align:left;min-width:185px;padding-left:10px}
+  .day{min-width:32px}
+  .check{width:18px;height:18px;accent-color:#fff;cursor:pointer}
+  .weekend{background:#141414}
+  .summary{background:#171717;font-weight:bold}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+  .stat{background:#111;border:1px solid #444;border-radius:8px;padding:14px}
+  .stat b{font-size:22px;display:block;margin-top:4px}
+  .hint{color:#aaa;font-size:13px;margin-top:10px}
+  .edit{width:100%;border:none;background:transparent;padding:0;color:#fff;font:inherit;outline:none}
+  @media(max-width:700px){.wrap{padding:10px}.stats{grid-template-columns:repeat(2,1fr)}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MY HABIT TRACKER</h1>
+  <div class="controls">
+    <select id="month"></select>
+    <input id="year" type="number" min="2020" max="2100">
+    <button onclick="addHabit()">+ Add Habit</button>
+    <button onclick="clearMonth()">Clear Month</button>
+    <button onclick="window.print()">Print</button>
+  </div>
+
+  <div class="card">
+    <table id="tracker"></table>
+  </div>
+
+  <div class="stats">
+    <div class="stat">Completed today <b id="today">0</b></div>
+    <div class="stat">Total completed <b id="total">0</b></div>
+    <div class="stat">Best habit <b id="best">—</b></div>
+    <div class="stat">Overall progress <b id="progress">0%</b></div>
+  </div>
+  <div class="hint">Tap a square to mark a habit complete. Your tracker is saved automatically when you make changes. It should stay saved after closing and reopening this same file in the same browser.</div>
+</div>
+
+<script>
+const defaultHabits = [
+  "Wake up at 05:00",
+  "Gym / Workout",
+  "Reading / Learning",
+  "Daily Planning",
+  "No Gaming",
+  "Project Work",
+  "No Junk Food",
+  "Social Media Limit",
+  "Cold Shower",
+  "10K Steps"
+];
+
+// Persistent storage: survives refresh, closing the tab/window, and reopening this same file
+const STORAGE_KEY = "myHabitTrackerData_v1";
+
+function loadTracker(){
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      return {
+        habits: Array.isArray(data.habits) ? data.habits : [...defaultHabits],
+        checks: data.checks && typeof data.checks === "object" ? data.checks : {}
+      };
+    }
+
+    // One-time migration from the old keys
+    const oldHabits = JSON.parse(localStorage.getItem("habitNames") || "null");
+    const oldChecks = JSON.parse(localStorage.getItem("habitChecks") || "{}");
+    return {
+      habits: Array.isArray(oldHabits) ? oldHabits : [...defaultHabits],
+      checks: oldChecks && typeof oldChecks === "object" ? oldChecks : {}
+    };
+  } catch (e) {
+    console.warn("Could not load saved habit data", e);
+    return { habits: [...defaultHabits], checks: {} };
+  }
+}
+
+let savedTracker = loadTracker();
+let habits = savedTracker.habits;
+let checks = savedTracker.checks;
+
+function saveTracker(){
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ habits, checks }));
+    // Keep compatibility with the previous version too
+    localStorage.setItem("habitNames", JSON.stringify(habits));
+    localStorage.setItem("habitChecks", JSON.stringify(checks));
+  } catch (e) {
+    console.error("Could not save habit data", e);
+  }
+}
+const monthNames=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const monthSel=document.getElementById("month");
+monthNames.forEach((m,i)=>monthSel.add(new Option(m,i)));
+const now=new Date();
+monthSel.value=now.getMonth();
+document.getElementById("year").value=now.getFullYear();
+
+function key(y,m,d,h){return `${y}-${m}-${d}-${h}`}
+
+function render(){
+  const m=+monthSel.value, y=+document.getElementById("year").value;
+  const days=new Date(y,m+1,0).getDate();
+  let t="<tr><th class='habit'>MY HABITS</th>";
+  for(let d=1;d<=days;d++){
+    const date=new Date(y,m,d), wk=date.getDay();
+    t+=`<th class="day ${wk===0||wk===6?'weekend':''}">${d}<br><small>${["S","M","T","W","T","F","S"][wk]}</small></th>`;
+  }
+  t+="<th class='summary'>TOTAL</th></tr>";
+
+  habits.forEach((h,i)=>{
+    t+=`<tr><td class="habit"><input class="edit" value="${escapeHtml(h)}" onchange="renameHabit(${i},this.value)"></td>`;
+    let count=0;
+    for(let d=1;d<=days;d++){
+      const k=key(y,m+1,d,i), on=!!checks[k]; if(on)count++;
+      const wk=new Date(y,m,d).getDay();
+      t+=`<td class="${wk===0||wk===6?'weekend':''}"><input class="check" type="checkbox" ${on?'checked':''} onchange="toggle('${k}',this.checked)"></td>`;
+    }
+    t+=`<td class="summary">${count}/${days}</td></tr>`;
+  });
+
+  t+=`<tr><td class="habit summary">DAILY TOTAL</td>`;
+  for(let d=1;d<=days;d++){
+    let c=0; habits.forEach((h,i)=>{if(checks[key(y,m+1,d,i)])c++});
+    t+=`<td class="summary">${c}</td>`;
+  }
+  t+="<td class='summary'>"+Object.keys(checks).filter(k=>k.startsWith(`${y}-${m+1}-`)).length+"</td></tr>";
+  document.getElementById("tracker").innerHTML=t;
+  updateStats();
+  saveTracker();
+}
+
+function toggle(k,v){ if(v) checks[k]=1; else delete checks[k]; saveTracker(); render(); }
+function renameHabit(i,v){habits[i]=v.trim()||`Habit ${i+1}`; saveTracker(); render();}
+function addHabit(){habits.push("New Habit"); saveTracker(); render();}
+function clearMonth(){
+  const m=+monthSel.value+1,y=+document.getElementById("year").value;
+  Object.keys(checks).forEach(k=>{if(k.startsWith(`${y}-${m}-`))delete checks[k]});
+  saveTracker();
+  render();
+}
+function updateStats(){
+  const m=+monthSel.value+1,y=+document.getElementById("year").value;
+  const todayDate=new Date(), tm=todayDate.getMonth()+1, ty=todayDate.getFullYear(), td=todayDate.getDate();
+  let today=0,total=0,best="—",bestN=0,possible=0;
+  habits.forEach((h,i)=>{
+    let n=0; const days=new Date(y,m,0).getDate();
+    for(let d=1;d<=days;d++){if(checks[key(y,m,d,i)]){n++;total++}}
+    possible+=days;
+    if(n>bestN){bestN=n;best=h}
+    if(y===ty && m===tm && checks[key(y,m,td,i)]) today++;
+  });
+  document.getElementById("today").textContent=today;
+  document.getElementById("total").textContent=total;
+  document.getElementById("best").textContent=best;
+  document.getElementById("progress").textContent=possible?Math.round(total/possible*100)+"%":"0%";
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
+monthSel.onchange=render;
+document.getElementById("year").onchange=render;
+render();
+</script>
+</body>
+</html>
